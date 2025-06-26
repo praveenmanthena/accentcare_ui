@@ -25,7 +25,7 @@ interface AddCodeModalProps {
   forcePrimary?: boolean; // Force primary selection (from primary section)
   forceSecondary?: boolean; // Force secondary selection (from secondary section)
   showTargetSelection?: boolean; // Show target selection (from PDF viewer or general add)
-  currentDocId?: string; // Add document ID prop
+  currentDocId?: string;
 }
 
 const AddCodeModal: React.FC<AddCodeModalProps> = ({
