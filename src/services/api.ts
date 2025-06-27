@@ -1,4 +1,4 @@
-const API_BASE_URL = "https://acc-icdbackend.penguinai.co";
+const API_BASE_URL = "https://acc-icdbackend-dev.penguinai.co";
 
 // Authentication API
 export const loginUser = async (credentials: {
