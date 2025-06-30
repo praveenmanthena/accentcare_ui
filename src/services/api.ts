@@ -79,6 +79,152 @@ const getAuthHeaders = () => {
   };
 };
 
+// NEW: Reorder Codes API
+export interface ReorderCodesPayload {
+  results: {
+    primary_codes: Array<{
+      diagnosis_code: string;
+      disease_description: string;
+      considered_but_excluded: boolean;
+      reason_for_exclusion: string;
+      supporting_info: Array<{
+        supporting_sentence_in_document: string;
+        document_name: string;
+        section_name: string;
+        page_number: string;
+        bbox: number[][];
+      }>;
+      reason_for_coding: string;
+      active_disease_asof_1june2025: boolean;
+      supporting_sentence_for_active_disease: string;
+      active_management_asof_1june2025: boolean;
+      supporting_sentence_for_active_management: string;
+      rank?: number;
+    }>;
+    secondary_codes: Array<{
+      diagnosis_code: string;
+      disease_description: string;
+      considered_but_excluded: boolean;
+      reason_for_exclusion: string;
+      supporting_info: Array<{
+        supporting_sentence_in_document: string;
+        document_name: string;
+        section_name: string;
+        page_number: string;
+        bbox: number[][];
+      }>;
+      reason_for_coding: string;
+      active_disease_asof_1june2025: boolean;
+      supporting_sentence_for_active_disease: string;
+      active_management_asof_1june2025: boolean;
+      supporting_sentence_for_active_management: string;
+      rank?: number;
+    }>;
+  };
+}
+
+export const reorderCodes = async (
+  documentId: string,
+  codes: any[]
+): Promise<any> => {
+  try {
+    console.log("🔄 Reordering codes for document:", documentId);
+    console.log("🔄 Input codes:", codes);
+
+    // Helper function to convert bounding_box to bbox format
+    const convertBoundingBoxToBboxArray = (boundingBox: any): number[][] => {
+      if (!boundingBox) return [];
+      
+      // If it's already in bbox array format, return as is
+      if (Array.isArray(boundingBox) && Array.isArray(boundingBox[0])) {
+        return boundingBox;
+      }
+      
+      // If it's in our internal format {x, y, width, height}, convert to bbox array
+      if (boundingBox.x !== undefined && boundingBox.y !== undefined) {
+        const x1 = boundingBox.x;
+        const y1 = boundingBox.y;
+        const x2 = boundingBox.x + boundingBox.width;
+        const y2 = boundingBox.y;
+        const x3 = boundingBox.x + boundingBox.width;
+        const y3 = boundingBox.y + boundingBox.height;
+        const x4 = boundingBox.x;
+        const y4 = boundingBox.y + boundingBox.height;
+        
+        return [[x1, y1, x2, y2, x3, y3, x4, y4]];
+      }
+      
+      return [];
+    };
+
+    // Helper function to transform code to API format
+    const transformCodeToApiFormat = (code: any) => ({
+      diagnosis_code: code.diagnosis_code,
+      disease_description: code.disease_description,
+      considered_but_excluded: code.considered_but_excluded === "True" || code.considered_but_excluded === true,
+      reason_for_exclusion: code.reason_for_exclusion || "",
+      supporting_info: (code.supporting_info || []).map((info: any) => ({
+        supporting_sentence_in_document: info.supporting_sentence_in_document || "",
+        document_name: info.document_name || "",
+        section_name: info.section_name || "Unknown",
+        page_number: info.page_number || "1",
+        bbox: info.bbox || convertBoundingBoxToBboxArray(info.bounding_box),
+      })),
+      reason_for_coding: code.reason_for_coding || "",
+      active_disease_asof_1june2025: code.active_disease_asof_1june2025 === "True" || code.active_disease_asof_1june2025 === true,
+      supporting_sentence_for_active_disease: code.supporting_sentence_for_active_disease || "",
+      active_management_asof_1june2025: code.active_management_asof_1june2025 === "True" || code.active_management_asof_1june2025 === true,
+      supporting_sentence_for_active_management: code.supporting_sentence_for_active_management || "",
+      rank: code.rank,
+    });
+
+    // Separate codes into primary and secondary based on is_primary flag
+    const primaryCodes = codes
+      .filter(code => code.is_primary === true || code.code_type === "primary")
+      .sort((a, b) => (a.rank || 999) - (b.rank || 999))
+      .map(transformCodeToApiFormat);
+
+    const secondaryCodes = codes
+      .filter(code => code.is_primary === false || code.code_type === "secondary")
+      .sort((a, b) => (a.rank || 999) - (b.rank || 999))
+      .map(transformCodeToApiFormat);
+
+    // Create the payload in the exact format you specified
+    const payload: ReorderCodesPayload = {
+      results: {
+        primary_codes: primaryCodes,
+        secondary_codes: secondaryCodes,
+      },
+    };
+
+    console.log("🔄 Reorder API payload:", JSON.stringify(payload, null, 2));
+
+    const response = await fetch(`${API_BASE_URL}/reorder_codes/${documentId}`, {
+      method: "POST",
+      headers: getAuthHeaders(),
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      if (response.status === 401) {
+        clearSession();
+        throw new Error("Session expired. Please login again.");
+      }
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(
+        errorData.message || `Failed to reorder codes: ${response.statusText}`
+      );
+    }
+
+    const data = await response.json();
+    console.log("🔄 Reorder codes API response:", data);
+    return data;
+  } catch (error) {
+    console.error("Error reordering codes:", error);
+    throw error;
+  }
+};
+
 // ICD Code Search API - Updated to match your exact API response format
 export interface IcdSearchResult {
   Code: string;

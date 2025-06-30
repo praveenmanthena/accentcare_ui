@@ -30,6 +30,23 @@
   animation-delay: 4s;
 }
 
+/* NEW: Fade in/out box shadow animation with #ccc color */
+@keyframes fade-shadow {
+  0% {
+    box-shadow: 0 0 0 0 rgba(204, 204, 204, 0);
+  }
+  50% {
+    box-shadow: 0 0 20px 5px rgba(204, 204, 204, 0.8);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(204, 204, 204, 0);
+  }
+}
+
+.fade-shadow-animation {
+  animation: fade-shadow 2s ease-in-out infinite;
+}
+
 /* Grid pattern for background */
 .bg-grid-pattern {
   background-image: 

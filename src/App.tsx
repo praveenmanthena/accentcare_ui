@@ -21,6 +21,7 @@ import {
   getUserData,
   isAuthenticated,
   loginUser,
+  reorderCodes, // NEW: Import reorder codes API
 } from "./services/api";
 import {
   ApiCodingResponse,
@@ -97,6 +98,120 @@ function PenguinLogo({ className = "w-8 h-8" }: { className?: string }) {
 function PenguinAILogo({ className = "h-10" }: { className?: string }) {
   return (
     <img src="/Penguinai-Byuw7M0n.png" alt="Penguin AI" className={className} />
+  );
+}
+
+// NEW: Custom Success Notification Component (matching the image style)
+function CustomSuccessNotification({
+  isVisible,
+  message,
+  onClose,
+}: {
+  isVisible: boolean;
+  message: string;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    if (isVisible) {
+      const timer = setTimeout(() => {
+        onClose();
+      }, 4000); // Auto-hide after 4 seconds
+
+      return () => clearTimeout(timer);
+    }
+  }, [isVisible, onClose]);
+
+  if (!isVisible) return null;
+
+  return (
+    <div className="fixed top-20 right-6 z-50 animate-in slide-in-from-top-2 duration-300">
+      <div className="bg-green-50 border border-green-200 rounded-lg shadow-lg p-4 max-w-sm min-w-[300px]">
+        <div className="flex items-start space-x-3">
+          <div className="flex-shrink-0">
+            <div className="w-6 h-6 bg-green-500 rounded-full flex items-center justify-center">
+              <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+              </svg>
+            </div>
+          </div>
+          <div className="flex-1">
+            <p className="text-sm font-medium text-green-800">Success!</p>
+            <p className="text-sm text-green-700 mt-1">{message}</p>
+          </div>
+          <button
+            onClick={onClose}
+            className="flex-shrink-0 ml-2 text-green-400 hover:text-green-600 transition-colors"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// NEW: Unsaved Changes Warning Modal
+function UnsavedChangesModal({
+  isVisible,
+  onSave,
+  onDiscard,
+  onCancel,
+}: {
+  isVisible: boolean;
+  onSave: () => void;
+  onDiscard: () => void;
+  onCancel: () => void;
+}) {
+  if (!isVisible) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-xl shadow-2xl max-w-md w-full mx-4 p-6 border border-gray-200">
+        {/* Header */}
+        <div className="flex items-center space-x-3 mb-4">
+          <div className="w-10 h-10 rounded-full flex items-center justify-center bg-orange-100">
+            <AlertCircle className="w-5 h-5 text-orange-600" />
+          </div>
+          <div>
+            <h3 className="text-lg font-semibold text-gray-900">
+              Unsaved Changes
+            </h3>
+            <p className="text-sm text-gray-600">
+              You have unsaved drag-and-drop changes
+            </p>
+          </div>
+        </div>
+
+        {/* Content */}
+        <div className="mb-6">
+          <p className="text-gray-700 text-sm leading-relaxed">
+            You've reordered ICD codes but haven't saved your changes. What would you like to do?
+          </p>
+        </div>
+
+        {/* Actions */}
+        <div className="flex space-x-3">
+          <button
+            onClick={onSave}
+            className="flex-1 py-2 px-4 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium"
+          >
+            Save Changes
+          </button>
+          <button
+            onClick={onDiscard}
+            className="flex-1 py-2 px-4 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium"
+          >
+            Discard Changes
+          </button>
+          <button
+            onClick={onCancel}
+            className="flex-1 py-2 px-4 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 transition-colors font-medium"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -431,6 +546,15 @@ function App() {
   // NEW: Persistent session actions tracking - survives navigation between views
   const [sessionActions, setSessionActions] = useState<Set<string>>(new Set());
 
+  // NEW: Drag-and-drop state tracking
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [showUnsavedChangesModal, setShowUnsavedChangesModal] = useState(false);
+  const [pendingNavigation, setPendingNavigation] = useState<(() => void) | null>(null);
+
+  // NEW: Custom success notification state
+  const [showSuccessNotification, setShowSuccessNotification] = useState(false);
+  const [successMessage, setSuccessMessage] = useState("");
+
   // Check for existing session on app load
   useEffect(() => {
     const checkExistingSession = () => {
@@ -481,6 +605,41 @@ function App() {
     setIsDrawingMode(false); // Reset drawing mode
     // NEW: Clear session actions on logout
     setSessionActions(new Set());
+    // NEW: Clear unsaved changes on logout
+    setHasUnsavedChanges(false);
+    setShowUnsavedChangesModal(false);
+    setPendingNavigation(null);
+    // NEW: Clear success notification
+    setShowSuccessNotification(false);
+  };
+
+  // NEW: Refresh coding results from API
+  const refreshCodingResults = async () => {
+    if (!currentDocId) {
+      console.warn("No document ID available for refreshing coding results");
+      return;
+    }
+
+    try {
+      console.log("🔄 Refreshing coding results for document:", currentDocId);
+      const refreshedCodes = await fetchCodingResults(currentDocId);
+      
+      // Update the codes state with fresh data from API
+      setCodes(refreshedCodes);
+      
+      // Update newly added codes based on fresh API data
+      const apiNewlyAddedCodes = new Set(
+        refreshedCodes
+          .filter((code) => code.is_newly_added === true || code.code_type === "ADDED")
+          .map((code) => code.diagnosis_code)
+      );
+      setNewlyAddedCodes(apiNewlyAddedCodes);
+      
+      console.log("✅ Coding results refreshed successfully");
+    } catch (error) {
+      console.error("❌ Error refreshing coding results:", error);
+      // Don't throw error to avoid breaking the UI flow
+    }
   };
 
   // UPDATED: Load data for specific document with single loading state
@@ -575,6 +734,8 @@ function App() {
       setCurrentDocId(docId || null);
       setCurrentEpisodeId(episodeId || docId || null); // NEW: Set episode ID (fallback to doc ID if not provided)
       setSelectedPatientName(patientName || null);
+      // NEW: Reset unsaved changes when loading new data
+      setHasUnsavedChanges(false);
     } catch (err) {
       console.error("Error loading data:", err);
       if (err instanceof Error && err.message.includes("Session expired")) {
@@ -607,16 +768,23 @@ function App() {
     setHighlightRequest(null);
   };
 
-  const handleUpdateCode = (updatedCode: MedicalCode) => {
+  // UPDATED: Enhanced handleUpdateCode with API refresh
+  const handleUpdateCode = async (updatedCode: MedicalCode) => {
+    console.log("🔄 Updating code:", updatedCode.diagnosis_code);
+    
+    // Update local state immediately for responsive UI
     setCodes((prevCodes) =>
       prevCodes.map((code) =>
         code.diagnosis_code === updatedCode.diagnosis_code ? updatedCode : code
       )
     );
+
+    // Refresh from API to get the latest state
+    await refreshCodingResults();
   };
 
-  // UPDATED: Enhanced handleAddCode to handle API-detected newly added codes
-  const handleAddCode = (
+  // UPDATED: Enhanced handleAddCode to handle API-detected newly added codes with refresh
+  const handleAddCode = async (
     newCode: MedicalCode,
     target?: "primary" | "secondary"
   ) => {
@@ -672,6 +840,9 @@ function App() {
     // Reset drawing mode after adding code
     setIsDrawingMode(false);
     setShowDrawingAlert(false);
+
+    // Refresh from API to get the latest state
+    await refreshCodingResults();
   };
 
   // Enhanced delete code handler
@@ -714,6 +885,23 @@ function App() {
       "and Episode ID:",
       episodeId
     );
+
+    // NEW: Check for unsaved changes before navigation
+    if (hasUnsavedChanges) {
+      setPendingNavigation(() => () => {
+        setCurrentView("coding");
+        // Find the patient name from the mock data based on documentId
+        const patientNames = ["Patient 1", "Patient 2", "Patient 3", "Patient 4"];
+        const patientName = patientNames[documentId - 1] || `Patient ${documentId}`;
+        // Load data for the specific document with both docId and episodeId
+        if (docId) {
+          loadDocumentData(docId, episodeId, patientName);
+        }
+      });
+      setShowUnsavedChangesModal(true);
+      return;
+    }
+
     setCurrentView("coding");
 
     // Find the patient name from the mock data based on documentId
@@ -761,6 +949,86 @@ function App() {
       newSet.delete(codeId);
       return newSet;
     });
+  };
+
+  // FIXED: Handle code reordering from drag and drop - PRESERVE original classification
+  const handleReorderCodes = (reorderedCodes: MedicalCode[]) => {
+    console.log("🔄 App.handleReorderCodes called with:", reorderedCodes.map(c => c.diagnosis_code));
+    
+    // FIXED: Update the codes state with the new order WITHOUT changing is_primary or code_type
+    // Only update the rank property for ordering, preserve all other properties
+    setCodes(reorderedCodes);
+    
+    // NEW: Mark as having unsaved changes
+    setHasUnsavedChanges(true);
+    
+    // Log the reordering for debugging
+    console.log("✅ Codes reordered in App state, unsaved changes marked");
+  };
+
+  // NEW: Handle save changes with custom notification and API refresh
+  const handleSaveChanges = async () => {
+    console.log("💾 Saving changes...");
+    
+    if (!currentDocId) {
+      console.error("❌ No document ID available for saving");
+      return;
+    }
+
+    try {
+      // Call the reorder codes API
+      await reorderCodes(currentDocId, codes);
+      
+      // Mark as saved
+      setHasUnsavedChanges(false);
+      console.log("✅ Changes saved successfully");
+      
+      // Show custom success notification instead of browser alert
+      setSuccessMessage("Code order saved successfully");
+      setShowSuccessNotification(true);
+
+      // Refresh coding results after successful save
+      await refreshCodingResults();
+    } catch (error) {
+      console.error("❌ Error saving changes:", error);
+      
+      // Show error alert (keep browser alert for errors)
+      alert(`❌ Failed to save changes: ${error instanceof Error ? error.message : "Unknown error"}`);
+    }
+  };
+
+  // NEW: Handle dashboard navigation with unsaved changes check
+  const handleDashboardNavigation = () => {
+    if (hasUnsavedChanges) {
+      setPendingNavigation(() => () => setCurrentView("dashboard"));
+      setShowUnsavedChangesModal(true);
+    } else {
+      setCurrentView("dashboard");
+    }
+  };
+
+  // NEW: Handle unsaved changes modal actions
+  const handleSaveAndNavigate = async () => {
+    await handleSaveChanges();
+    setShowUnsavedChangesModal(false);
+    if (pendingNavigation) {
+      pendingNavigation();
+      setPendingNavigation(null);
+    }
+  };
+
+  const handleDiscardAndNavigate = () => {
+    setHasUnsavedChanges(false);
+    setShowUnsavedChangesModal(false);
+    if (pendingNavigation) {
+      pendingNavigation();
+      setPendingNavigation(null);
+    }
+  };
+
+  const handleCancelNavigation = () => {
+    setShowUnsavedChangesModal(false);
+    setPendingNavigation(null);
   };
 
   const acceptedCount = codes.filter(
@@ -853,10 +1121,25 @@ function App() {
 
   return (
     <div className="min-h-screen bg-gray-100">
+      {/* NEW: Custom Success Notification */}
+      <CustomSuccessNotification
+        isVisible={showSuccessNotification}
+        message={successMessage}
+        onClose={() => setShowSuccessNotification(false)}
+      />
+
       {/* UPDATED: Centered Drawing Instruction Alert (no target parameter) */}
       <DrawingInstructionAlert
         isVisible={showDrawingAlert}
         onClose={handleAlertClose}
+      />
+
+      {/* NEW: Unsaved Changes Modal */}
+      <UnsavedChangesModal
+        isVisible={showUnsavedChangesModal}
+        onSave={handleSaveAndNavigate}
+        onDiscard={handleDiscardAndNavigate}
+        onCancel={handleCancelNavigation}
       />
 
       {/* UPDATED: Compact Header - Show Episode ID instead of Document ID */}
@@ -889,6 +1172,12 @@ function App() {
                   {currentEpisodeId && (
                     <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded-md text-xs font-mono">
                       Episode: {currentEpisodeId}
+                    </span>
+                  )}
+                  {/* NEW: Unsaved changes indicator */}
+                  {hasUnsavedChanges && (
+                    <span className="bg-orange-100 text-orange-800 px-2 py-1 rounded-md text-xs font-medium">
+                      Unsaved Changes
                     </span>
                   )}
                 </div>
@@ -932,7 +1221,7 @@ function App() {
               onIcdCodeSelect={handleIcdCodeSelect}
               selectedIcdCode={selectedIcdCode}
               onAddCode={handleAddCode}
-              setDashboardPage={(view) => setCurrentView(view)}
+              setDashboardPage={handleDashboardNavigation} // NEW: Use navigation handler
               currentDocId={currentDocId} // Pass document ID to PDFViewer
               selectedPatientName={selectedPatientName} // Pass patient name to PDFViewer
               isDrawingMode={isDrawingMode} // Pass drawing mode state
@@ -953,11 +1242,15 @@ function App() {
               currentDocId={currentDocId} // Pass document ID to CodesPanel
               onSessionExpired={handleLogout} // Pass logout handler for session expiration
               isLoading={false} // UPDATED: No separate loading for codes panel
-              setDashboardPage={(view) => setCurrentView(view)} // Pass dashboard navigation to CodesPanel
+              setDashboardPage={handleDashboardNavigation} // NEW: Use navigation handler
               onStartDrawing={handleStartDrawing} // UPDATED: Pass simplified drawing trigger to CodesPanel
               sessionActions={sessionActions} // NEW: Pass persistent session actions
               onSessionAction={handleSessionAction} // NEW: Pass session action handler
               onUndoAction={handleUndoAction} // NEW: Pass undo action handler
+              onReorderCodes={handleReorderCodes} // NEW: Pass reorder codes handler
+              hasUnsavedChanges={hasUnsavedChanges} // NEW: Pass unsaved changes state
+              onSaveChanges={handleSaveChanges} // NEW: Pass save changes handler
+              refreshCodingResults={refreshCodingResults} // NEW: Pass refresh function
             />
           </div>
         </div>

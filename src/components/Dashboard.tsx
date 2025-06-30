@@ -500,7 +500,7 @@ const Dashboard: React.FC<DashboardProps> = ({
   return (
     <div
       className="min-h-screen bg-gray-50"
-      style={{ width: "90%", margin: "30px auto" }}
+      style={{ width: "98%", margin: "30px auto" }}
     >
       {/* Header */}
       <div className="bg-white border-b border-gray-200 px-6 py-6">
